@@ -41,7 +41,7 @@ All settings are at the top of `gadget/index.html`:
 ```js
 var STEPS = [0, 1, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360]; // delays in minutes
 var ASK_TIMEOUT = 15000;   // ms before an untouched prompt closes
-var SLEEP_GRACE = 90000;   // ms of "oversleeping" after which the action is skipped
+var SLEEP_GRACE = 30000;   // ms of "oversleeping" after which the action is skipped
 ```
 
 The commands and texts are defined in the `ACTIONS` object in the same file.
