@@ -35,7 +35,7 @@ var ACTIONS = {
 // available delays in minutes (0 = now)
 var STEPS = [0, 1, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
 var ASK_TIMEOUT = 15000;   // ms without interaction → the prompt closes itself
-var SLEEP_GRACE = 90000;   // ms; if the countdown "oversleeps" by more than this, the action is skipped
+var SLEEP_GRACE = 30000;   // ms; if the countdown "oversleeps" by more than this, the action is skipped
 
 // ---------- state ----------
 var pending = null;   // action being confirmed
