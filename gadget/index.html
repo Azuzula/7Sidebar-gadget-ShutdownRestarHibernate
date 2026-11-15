@@ -1,0 +1,221 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Shutdown, restart, hibernate</title>
+<style type="text/css">
+body {
+	margin: 0;
+	width: 130px;
+	height: 57px;
+	font-family: "Segoe UI", Tahoma, sans-serif;
+	color: #ffffff;
+	cursor: default;
+	overflow: hidden;
+}
+img { border: 0; }
+.btn  { position: absolute; top: 16px; width: 36px; height: 21px; cursor: pointer; }
+.sbtn { position: absolute; width: 24px; height: 21px; cursor: pointer; }
+.wbtn { position: absolute; width: 52px; height: 21px; cursor: pointer; }
+.text {
+	position: absolute;
+	font-size: 11px;
+	text-align: center;
+	white-space: nowrap;
+	overflow: hidden;
+}
+#askRow, #countRow { display: none; }
+</style>
+<script type="text/javascript">
+// ---------- settings ----------
+var ACTIONS = {
+	shutdown:  { ask: "Shut down?",  noun: "Shutdown",    args: "-p" },
+	reboot:    { ask: "Restart?",    noun: "Restart",     args: "-r -f -t 01" },
+	hibernate: { ask: "Hibernate?",  noun: "Hibernation", args: "/h" }
+};
+// available delays in minutes (0 = now)
+var STEPS = [0, 1, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
+var ASK_TIMEOUT = 15000;   // ms without interaction → the prompt closes itself
+var SLEEP_GRACE = 90000;   // ms; if the countdown "oversleeps" by more than this, the action is skipped
+
+// ---------- state ----------
+var pending = null;   // action being confirmed
+var stepIdx = 0;
+var askTimer = null;
+var countAction = null;
+var countTarget = 0;
+var countTimer = null;
+
+// preload images
+(function () {
+	var n = ["shutdown", "reboot", "hibernate", "yes-shutdown", "yes-reboot", "yes-hibernate",
+		"no", "no-wide", "minus", "plus"];
+	for (var i = 0; i < n.length; i++) {
+		new Image().src = "src/" + n[i] + "-off.png";
+		new Image().src = "src/" + n[i] + "-on.png";
+	}
+	new Image().src = "src/background-big.png";
+})();
+
+function $(id) { return document.getElementById(id); }
+
+function hover(img, on) {
+	img.src = img.src.replace(on ? "-off.png" : "-on.png", on ? "-on.png" : "-off.png");
+}
+
+function resetHovers() {
+	var imgs = document.getElementsByTagName("img");
+	for (var i = 0; i < imgs.length; i++) hover(imgs[i], false);
+}
+
+function setBig(big) {
+	var h = big ? 112 : 57;
+	document.body.style.height = h + "px";
+	try {
+		var bg = $("bg");
+		bg.src = big ? "src/background-big.png" : "src/background.png";
+		bg.style.height = h + "px";
+	} catch (e) {}
+}
+
+function show(row) {
+	$("mainRow").style.display  = row == "main"  ? "block" : "none";
+	$("askRow").style.display   = row == "ask"   ? "block" : "none";
+	$("countRow").style.display = row == "count" ? "block" : "none";
+	setBig(row == "ask");
+	resetHovers();
+}
+
+function pad(n) { return n < 10 ? "0" + n : "" + n; }
+
+function delayText(min) {
+	if (min == 0) return "now";
+	if (min < 60) return "in " + min + " min";
+	var h = min / 60;
+	return "in " + h + " h";
+}
+
+// ---------- prompt + delay ----------
+function ask(action) {
+	pending = action;
+	stepIdx = 0;
+	$("askLabel").innerText = ACTIONS[action].ask;
+	$("yes").src = "src/yes-" + action + "-off.png";
+	updateDelay();
+	show("ask");
+	touchAsk();
+}
+
+function touchAsk() {
+	if (askTimer) clearTimeout(askTimer);
+	askTimer = setTimeout(cancelAsk, ASK_TIMEOUT);
+}
+
+function step(d) {
+	stepIdx = Math.max(0, Math.min(STEPS.length - 1, stepIdx + d));
+	updateDelay();
+	touchAsk();
+}
+
+function wheel() {
+	var e = window.event;
+	if (e) { step(e.wheelDelta > 0 ? 1 : -1); e.returnValue = false; }
+	return false;
+}
+
+function updateDelay() {
+	$("delay").innerText = delayText(STEPS[stepIdx]);
+	$("yes").title = ACTIONS[pending].noun + " " + delayText(STEPS[stepIdx]);
+}
+
+function cancelAsk() {
+	if (askTimer) { clearTimeout(askTimer); askTimer = null; }
+	pending = null;
+	show("main");
+}
+
+function confirmAction() {
+	var action = pending;
+	var min = STEPS[stepIdx];
+	cancelAsk();
+	if (!action) return;
+	if (min == 0) run(action);
+	else startCountdown(action, min);
+}
+
+// ---------- countdown ----------
+function startCountdown(action, min) {
+	countAction = action;
+	countTarget = new Date().getTime() + min * 60000;
+	var t = new Date(countTarget);
+	$("countIco").src = "src/ico-" + action + ".png";
+	$("countIco").title = ACTIONS[action].noun + " at " + t.getHours() + ":" + pad(t.getMinutes());
+	$("countText").title = $("countIco").title;
+	show("count");
+	tick();
+	countTimer = setInterval(tick, 1000);
+}
+
+function tick() {
+	var rem = countTarget - new Date().getTime();
+	if (rem <= 0) {
+		var action = countAction;
+		var overslept = -rem > SLEEP_GRACE; // the computer was asleep → better do nothing
+		cancelCountdown();
+		if (!overslept) run(action);
+		return;
+	}
+	var s = Math.ceil(rem / 1000);
+	var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+	$("countText").innerText = h > 0 ? h + ":" + pad(m) + ":" + pad(sec) : m + ":" + pad(sec);
+	$("countText").style.color = s <= 60 ? "#ff9a8a" : "#ffffff";
+}
+
+function cancelCountdown() {
+	if (countTimer) { clearInterval(countTimer); countTimer = null; }
+	countAction = null;
+	show("main");
+}
+
+// ---------- run ----------
+function run(action) {
+	show("main"); // so the normal state is shown after waking up
+	System.Shell.execute("shutdown", ACTIONS[action].args);
+}
+</script>
+</head>
+<body>
+<g:background id="bg" src="src/background.png"></g:background>
+
+<!-- main bar -->
+<div id="mainRow">
+	<img class="btn" style="left: 11px;" src="src/shutdown-off.png" title="Shut down"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="ask('shutdown')" />
+	<img class="btn" style="left: 47px;" src="src/reboot-off.png" title="Restart"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="ask('reboot')" />
+	<img class="btn" style="left: 83px;" src="src/hibernate-off.png" title="Hibernate"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="ask('hibernate')" />
+</div>
+
+<!-- expanded prompt with delay -->
+<div id="askRow" onmousewheel="return wheel()">
+	<div id="askLabel" class="text" style="left: 6px; top: 19px; width: 118px; font-size: 12px;"></div>
+	<img class="sbtn" style="left: 11px; top: 40px;" src="src/minus-off.png" title="Less"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="step(-1)" />
+	<div id="delay" class="text" style="left: 35px; top: 42px; width: 60px;" title="Mouse wheel works too"></div>
+	<img class="sbtn" style="left: 95px; top: 40px;" src="src/plus-off.png" title="More"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="step(1)" />
+	<img id="yes" class="wbtn" style="left: 11px; top: 66px;" src="src/yes-shutdown-off.png" title="Yes"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="confirmAction()" />
+	<img class="wbtn" style="left: 67px; top: 66px;" src="src/no-wide-off.png" title="Cancel"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="cancelAsk()" />
+</div>
+
+<!-- running countdown -->
+<div id="countRow">
+	<img id="countIco" class="sbtn" style="left: 11px; top: 16px; cursor: default;" src="src/ico-shutdown.png" />
+	<div id="countText" class="text" style="left: 35px; top: 17px; width: 60px; font-size: 12px;"></div>
+	<img class="sbtn" style="left: 95px; top: 16px;" src="src/no-off.png" title="Cancel countdown"
+		onmouseover="hover(this, true)" onmouseout="hover(this, false)" onclick="cancelCountdown()" />
+</div>
+</body>
+</html>
